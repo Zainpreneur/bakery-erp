@@ -6,9 +6,12 @@ reporting dashboard.
 
 ## Stack
 
-- **Backend:** Node.js, Express, TypeScript, Prisma ORM, SQLite, JWT auth
-- **Frontend:** React 19, TypeScript, Vite, React Router, Tailwind CSS v4, Recharts
-- **Monorepo:** npm workspaces (`server/`, `client/`)
+- **Framework:** Next.js 16 (App Router), React 19, TypeScript
+- **API:** Next.js Route Handlers under `src/app/api/` (no separate Express server)
+- **Data:** Prisma ORM + SQLite, Zod validation
+- **Auth:** JWT in an httpOnly cookie, role guards in route handlers
+- **UI:** Tailwind CSS v4, Recharts
+- The legacy Vite/Express implementation is kept in `client/` and `server/` as reference only.
 
 ## Features
 
@@ -26,6 +29,15 @@ reporting dashboard.
 - **Dashboard** — revenue today/week/month, 30-day revenue trend, top-selling products,
   low-stock alerts, and a net-income snapshot
 
+## UI / UX
+
+- Collapsible desktop sidebar (state saved locally) with an off-canvas mobile drawer
+- Keyboard-first navigation: skip link, visible focus rings, labelled icon controls,
+  native `<dialog>` modals with Escape/backdrop dismissal and focus management
+- Responsive layouts with keyboard-scrollable data tables, consistent loading/empty/error
+  states, retry actions, and toast feedback after mutations
+- Warm bakery-inspired design tokens, SVG icon set, and reduced-motion support
+
 ## Getting Started
 
 ### Prerequisites
@@ -36,10 +48,12 @@ reporting dashboard.
 
 ```bash
 npm install
-cp server/.env.example server/.env   # edit JWT_SECRET etc. if desired
-npm run db:migrate                   # creates the SQLite database & schema
-npm run seed                         # loads demo data (products, ingredients, orders…)
+cp .env.example .env   # optional: change JWT_SECRET / DATABASE_URL
+npm run setup          # prisma generate + migrate deploy + seed
 ```
+
+If `.env.example` is not present, create `.env` with:
+`DATABASE_URL="file:./dev.db"` and `JWT_SECRET="change-me"`.
 
 ### Run (dev)
 
@@ -47,9 +61,8 @@ npm run seed                         # loads demo data (products, ingredients, o
 npm run dev
 ```
 
-This starts the API on **http://localhost:4000** and the frontend on
-**http://localhost:5173** (Vite proxies `/api` to the backend). Open the frontend
-in your browser and sign in with one of the seeded demo accounts:
+Open **http://localhost:3000** — the UI and API are served by the same Next.js
+process. Sign in with one of the seeded demo accounts:
 
 | Email                | Password   | Role  |
 | --------------------- | ---------- | ----- |
@@ -60,26 +73,24 @@ in your browser and sign in with one of the seeded demo accounts:
 
 ```bash
 npm run build
+npm start
 ```
 
-Builds the server to `server/dist` and the client to `client/dist`. Serve the
-client's static build with any static host / reverse proxy, and run
-`node server/dist/index.js` (with a proper `.env`) for the API.
+`next build` produces a single optimized app; `npm start` serves the UI and API
+on port 3000.
 
 ## Project Structure
 
 ```
-server/               Express + TypeScript API
-  prisma/schema.prisma   Data model (users, customers, suppliers, ingredients,
-                         products, recipes, orders, inventory transactions, expenses)
-  prisma/seed.ts         Demo data seed script
-  src/routes/            REST endpoints, grouped by resource
-  src/middleware/        JWT auth + role guards, centralized error handling
-client/               React + Vite frontend
-  src/pages/             One page per feature area
-  src/components/        Shared UI kit (Button, Modal, Card, Badge, …) + app Layout
-  src/context/            Auth context (JWT session)
-  src/api/                Axios client with auth header injection
+prisma/                 Prisma schema, migrations and demo seed
+src/app/                Next.js App Router
+  (app)/                Authenticated app shell + feature pages
+  api/                  Route Handlers (auth, users, customers, suppliers,
+                        ingredients, products, orders, expenses, dashboard, health)
+  login/                Sign-in page
+src/components/         Auth provider, app shell and shared UI kit
+src/lib/                Prisma client, auth helpers, HTTP helpers, API client, types
+client/ server/         Legacy Vite + Express implementation (reference only)
 ```
 
 ## Notes
@@ -88,3 +99,4 @@ client/               React + Vite frontend
   swapped to PostgreSQL/MySQL for production by changing `provider` and `DATABASE_URL`.
 - Enum-like fields (order status, roles, etc.) are plain `String` columns in the Prisma
   schema (SQLite has no native enum type) but are validated with Zod at the API layer.
+- Auth is stored in an httpOnly cookie; Bearer tokens are also accepted by API handlers.

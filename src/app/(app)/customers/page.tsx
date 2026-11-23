@@ -1,252 +1,380 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import Link from "next/link";
+import { type ColumnDef } from "@tanstack/react-table";
+import { toast } from "sonner";
+import {
+  IconDotsVertical,
+  IconEye,
+  IconMail,
+  IconPencil,
+  IconPhone,
+  IconPlus,
+  IconTrash,
+  IconUsers,
+} from "@tabler/icons-react";
+
 import { api, apiErrorMessage } from "@/lib/api-client";
 import type { Customer } from "@/lib/types";
+import { formatDate, initials } from "@/lib/format";
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
+import { DataTable, SortableHeader } from "@/components/data-table";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Button,
-  Card,
-  ConfirmDialog,
-  EmptyState,
-  ErrorState,
-  Input,
-  Label,
-  LoadingState,
-  Modal,
-  PageHeader,
-  TableShell,
-  Textarea,
-} from "@/components/ui";
-import { useToast } from "@/components/toast-provider";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const emptyForm = { name: "", email: "", phone: "", address: "", notes: "" };
 
-export function Customers() {
-  const { notify } = useToast();
-  const [customers, setCustomers] = useState<Customer[] | null>(null);
+export default function CustomersPage() {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
-  async function load(q = "") {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
     try {
-      const res = await api.get<Customer[]>("/customers", { params: q ? { search: q } : undefined });
+      const res = await api.get<Customer[]>("/customers");
       setCustomers(res.data);
-      setLoadError("");
     } catch (err) {
       setLoadError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    void load();
   }, []);
 
   useEffect(() => {
-    const handle = setTimeout(() => void load(search), 300);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+    void load();
+  }, [load]);
+
+  const stats = useMemo(
+    () => ({
+      total: customers.length,
+      withEmail: customers.filter((c) => c.email).length,
+      orders: customers.reduce((sum, c) => sum + (c._count?.orders ?? 0), 0),
+      newest: customers.length
+        ? formatDate(customers[customers.length - 1].createdAt)
+        : "—",
+    }),
+    [customers]
+  );
 
   function openCreate() {
     setEditing(null);
     setForm(emptyForm);
-    setError("");
-    setModalOpen(true);
+    setFormError("");
+    setDialogOpen(true);
   }
 
-  function openEdit(c: Customer) {
-    setEditing(c);
+  function openEdit(customer: Customer) {
+    setEditing(customer);
     setForm({
-      name: c.name,
-      email: c.email ?? "",
-      phone: c.phone ?? "",
-      address: c.address ?? "",
-      notes: c.notes ?? "",
+      name: customer.name,
+      email: customer.email ?? "",
+      phone: customer.phone ?? "",
+      address: customer.address ?? "",
+      notes: customer.notes ?? "",
     });
-    setError("");
-    setModalOpen(true);
+    setFormError("");
+    setDialogOpen(true);
   }
 
-  async function handleSave() {
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
     setSaving(true);
-    setError("");
+    setFormError("");
+    const payload = {
+      name: form.name.trim(),
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+      address: form.address.trim() || null,
+      notes: form.notes.trim() || null,
+    };
     try {
-      if (editing) {
-        await api.put(`/customers/${editing.id}`, form);
-      } else {
-        await api.post("/customers", form);
-      }
-      setModalOpen(false);
-      await load(search);
-      notify(editing ? "Customer updated" : "Customer added");
+      if (editing) await api.put(`/customers/${editing.id}`, payload);
+      else await api.post("/customers", payload);
+      toast.success(editing ? "Customer updated" : "Customer added");
+      setDialogOpen(false);
+      await load();
     } catch (err) {
-      setError(apiErrorMessage(err));
+      setFormError(apiErrorMessage(err));
     } finally {
       setSaving(false);
     }
   }
 
-  async function confirmDelete() {
-    const customer = deleteTarget;
-    if (!customer) return;
-    setDeleting(true);
+  async function handleDelete() {
+    if (!deleteTarget) return;
     try {
-      await api.delete(`/customers/${customer.id}`);
-      setDeleteTarget(null);
-      await load(search);
-      notify("Customer deleted");
+      await api.delete(`/customers/${deleteTarget.id}`);
+      toast.success("Customer deleted");
+      await load();
     } catch (err) {
-      notify(apiErrorMessage(err), "error");
-    } finally {
-      setDeleting(false);
+      toast.error(apiErrorMessage(err));
+      throw err;
     }
   }
 
-  if (!customers) {
-    return loadError ? (
-      <ErrorState message={loadError} onRetry={() => void load(search)} />
-    ) : (
-      <LoadingState label="Loading customers…" />
-    );
-  }
+  const columns: ColumnDef<Customer>[] = useMemo(
+    () => [
+      {
+        accessorKey: "name",
+        header: ({ column }) => <SortableHeader column={column} title="Customer" />,
+        cell: ({ row }) => {
+          const customer = row.original;
+          return (
+            <div className="flex items-center gap-3">
+              <Avatar className="size-9">
+                <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                  {initials(customer.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <Link
+                  href={`/customers/${customer.id}`}
+                  className="block truncate font-medium text-primary hover:underline"
+                >
+                  {customer.name}
+                </Link>
+                <p className="truncate text-xs text-muted-foreground">
+                  Joined {formatDate(customer.createdAt)}
+                </p>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "email",
+        header: "Email",
+        cell: ({ row }) =>
+          row.original.email ? (
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <IconMail className="size-3.5 shrink-0" />
+              <span className="truncate">{row.original.email}</span>
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        accessorKey: "phone",
+        header: "Phone",
+        cell: ({ row }) =>
+          row.original.phone ? (
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <IconPhone className="size-3.5 shrink-0" />
+              {row.original.phone}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: "orders",
+        header: "Orders",
+        cell: ({ row }) => (
+          <Badge variant="secondary" className="tabular-nums">
+            {row.original._count?.orders ?? 0}
+          </Badge>
+        ),
+      },
+      {
+        id: "actions",
+        enableHiding: false,
+        cell: ({ row }) => {
+          const customer = row.original;
+          return (
+            <div className="text-right">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-8">
+                    <IconDotsVertical className="size-4" />
+                    <span className="sr-only">Customer actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem asChild>
+                    <Link href={`/customers/${customer.id}`}>
+                      <IconEye className="size-4" /> View profile
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => openEdit(customer)}>
+                    <IconPencil className="size-4" /> Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => setDeleteTarget(customer)}
+                  >
+                    <IconTrash className="size-4" /> Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
+      },
+    ],
+    []
+  );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
         title="Customers"
-        description="Your regulars and their order history."
-        actions={
-          <Button onClick={openCreate} leftIcon="plus">
-            New Customer
-          </Button>
-        }
-      />
+        description="Keep your regulars close, with their contact details and order history."
+      >
+        <Button onClick={openCreate}>
+          <IconPlus className="size-4" /> Add customer
+        </Button>
+      </PageHeader>
 
-      <Input
-        id="customer-search"
-        aria-label="Search customers"
-        placeholder="Search by name, email, or phone…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="max-w-sm"
-      />
+      {loadError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Could not load customers</AlertTitle>
+          <AlertDescription className="flex items-center gap-3">
+            {loadError}
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-      {customers.length === 0 ? (
-        <Card>
-          <EmptyState title="No customers found" subtitle="Try another search or add a new customer." icon="customers" />
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Customers" value={String(stats.total)} icon={IconUsers} />
+        <StatCard label="With email" value={String(stats.withEmail)} />
+        <StatCard label="Total orders" value={String(stats.orders)} />
+        <StatCard label="Latest signup" value={stats.newest} />
+      </div>
+
+      {loading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-10 max-w-xs" />
+          <Skeleton className="h-96" />
+        </div>
       ) : (
-        <TableShell label="Customers">
-          <table className="min-w-[640px] w-full text-left text-sm">
-            <caption className="sr-only">Customers with contact details and order counts</caption>
-            <thead className="border-b border-crust-800/10 text-xs uppercase tracking-wide text-crust-800/50">
-              <tr>
-                <th className="px-4 py-3">Name</th>
-                <th className="px-4 py-3">Email</th>
-                <th className="px-4 py-3">Phone</th>
-                <th className="px-4 py-3">Orders</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-crust-800/5">
-              {customers.map((c) => (
-                <tr key={c.id} className="hover:bg-cream-50">
-                  <td className="px-4 py-3 font-medium text-crust-800">{c.name}</td>
-                  <td className="px-4 py-3 text-crust-800/70">{c.email ?? "—"}</td>
-                  <td className="px-4 py-3 text-crust-800/70">{c.phone ?? "—"}</td>
-                  <td className="px-4 py-3 text-crust-800/70">{c._count?.orders ?? 0}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <Button variant="ghost" size="sm" leftIcon="edit" onClick={() => openEdit(c)}>
-                        Edit
-                      </Button>
-                      <Button variant="danger" size="sm" onClick={() => setDeleteTarget(c)}>
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableShell>
+        <DataTable
+          columns={columns}
+          data={customers}
+          searchKey="name"
+          searchPlaceholder="Search customers…"
+        />
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit Customer" : "New Customer"}>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="customer-name">Name</Label>
-            <Input id="customer-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="customer-email">Email</Label>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit customer" : "Add customer"}</DialogTitle>
+            <DialogDescription>
+              Contact details make it easier to take phone and catering orders.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="customer-name">Name</Label>
               <Input
-                id="customer-email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                id="customer-name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Jane Doe"
+                required
               />
             </div>
-            <div>
-              <Label htmlFor="customer-phone">Phone</Label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="customer-email">Email</Label>
+                <Input
+                  id="customer-email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="jane@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="customer-phone">Phone</Label>
+                <Input
+                  id="customer-phone"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="(555) 123-4567"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customer-address">Address</Label>
               <Input
-                id="customer-phone"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                id="customer-address"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
               />
             </div>
-          </div>
-          <div>
-            <Label htmlFor="customer-address">Address</Label>
-            <Input
-              id="customer-address"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-            />
-          </div>
-          <div>
-            <Label htmlFor="customer-notes">Notes</Label>
-            <Textarea
-              id="customer-notes"
-              rows={2}
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-red-600">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button loading={saving} onClick={() => void handleSave()} disabled={!form.name}>
-              Save Customer
-            </Button>
-          </div>
-        </div>
-      </Modal>
+            <div className="space-y-2">
+              <Label htmlFor="customer-notes">Notes</Label>
+              <Textarea
+                id="customer-notes"
+                rows={2}
+                value={form.notes}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="Allergies, favourite items, standing instructions…"
+              />
+            </div>
+            {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving || !form.name.trim()}>
+                {saving ? "Saving…" : editing ? "Save changes" : "Add customer"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete customer"
-        message={`Remove "${deleteTarget?.name ?? ""}"? This cannot be undone.`}
-        loading={deleting}
-        onConfirm={() => void confirmDelete()}
-        onClose={() => setDeleteTarget(null)}
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={`Delete ${deleteTarget?.name ?? "customer"}?`}
+        description="Customers with order history cannot be deleted. Their details will remain attached to past orders."
+        onConfirm={handleDelete}
       />
     </div>
   );
 }
-
-export default Customers;

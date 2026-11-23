@@ -1,219 +1,356 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import { toast } from "sonner";
+import {
+  IconDotsVertical,
+  IconMail,
+  IconPencil,
+  IconPhone,
+  IconPlus,
+  IconTrash,
+  IconTruck,
+} from "@tabler/icons-react";
+
 import { api, apiErrorMessage } from "@/lib/api-client";
 import type { Supplier } from "@/lib/types";
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Button,
-  Card,
-  ConfirmDialog,
-  EmptyState,
-  ErrorState,
-  Input,
-  Label,
-  LoadingState,
-  Modal,
-  PageHeader,
-} from "@/components/ui";
-import { useToast } from "@/components/toast-provider";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-const emptyForm = { name: "", contactName: "", email: "", phone: "", address: "" };
+const emptyForm = {
+  name: "",
+  contactName: "",
+  email: "",
+  phone: "",
+  address: "",
+};
 
-export function Suppliers() {
-  const { notify } = useToast();
-  const [suppliers, setSuppliers] = useState<Supplier[] | null>(null);
+export default function SuppliersPage() {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Supplier | null>(null);
   const [form, setForm] = useState(emptyForm);
-  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [search, setSearch] = useState("");
 
-  async function load() {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
     try {
       const res = await api.get<Supplier[]>("/suppliers");
       setSuppliers(res.data);
-      setLoadError("");
     } catch (err) {
       setLoadError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
+
+  const filtered = useMemo(
+    () =>
+      suppliers.filter((supplier) =>
+        `${supplier.name} ${supplier.contactName ?? ""} ${supplier.email ?? ""}`
+          .toLowerCase()
+          .includes(search.toLowerCase())
+      ),
+    [suppliers, search]
+  );
+
+  const stats = useMemo(
+    () => ({
+      total: suppliers.length,
+      withContact: suppliers.filter((s) => s.contactName).length,
+      ingredients: suppliers.reduce(
+        (sum, s) => sum + (s._count?.ingredients ?? 0),
+        0
+      ),
+    }),
+    [suppliers]
+  );
 
   function openCreate() {
     setEditing(null);
     setForm(emptyForm);
-    setError("");
-    setModalOpen(true);
+    setFormError("");
+    setDialogOpen(true);
   }
 
-  function openEdit(s: Supplier) {
-    setEditing(s);
+  function openEdit(supplier: Supplier) {
+    setEditing(supplier);
     setForm({
-      name: s.name,
-      contactName: s.contactName ?? "",
-      email: s.email ?? "",
-      phone: s.phone ?? "",
-      address: s.address ?? "",
+      name: supplier.name,
+      contactName: supplier.contactName ?? "",
+      email: supplier.email ?? "",
+      phone: supplier.phone ?? "",
+      address: supplier.address ?? "",
     });
-    setError("");
-    setModalOpen(true);
+    setFormError("");
+    setDialogOpen(true);
   }
 
-  async function handleSave() {
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
     setSaving(true);
-    setError("");
+    setFormError("");
+    const payload = {
+      name: form.name.trim(),
+      contactName: form.contactName.trim() || null,
+      email: form.email.trim() || null,
+      phone: form.phone.trim() || null,
+      address: form.address.trim() || null,
+    };
     try {
-      if (editing) {
-        await api.put(`/suppliers/${editing.id}`, form);
-      } else {
-        await api.post("/suppliers", form);
-      }
-      setModalOpen(false);
+      if (editing) await api.put(`/suppliers/${editing.id}`, payload);
+      else await api.post("/suppliers", payload);
+      toast.success(editing ? "Supplier updated" : "Supplier added");
+      setDialogOpen(false);
       await load();
-      notify(editing ? "Supplier updated" : "Supplier created");
     } catch (err) {
-      setError(apiErrorMessage(err));
+      setFormError(apiErrorMessage(err));
     } finally {
       setSaving(false);
     }
   }
 
-  async function confirmDelete() {
-    const supplier = deleteTarget;
-    if (!supplier) return;
-    setDeleting(true);
+  async function handleDelete() {
+    if (!deleteTarget) return;
     try {
-      await api.delete(`/suppliers/${supplier.id}`);
-      setDeleteTarget(null);
+      await api.delete(`/suppliers/${deleteTarget.id}`);
+      toast.success("Supplier deleted");
       await load();
-      notify("Supplier deleted");
     } catch (err) {
-      notify(apiErrorMessage(err), "error");
-    } finally {
-      setDeleting(false);
+      toast.error(apiErrorMessage(err));
+      throw err;
     }
   }
 
-  if (!suppliers) {
-    return loadError ? (
-      <ErrorState message={loadError} onRetry={() => void load()} />
-    ) : (
-      <LoadingState label="Loading suppliers…" />
-    );
-  }
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
         title="Suppliers"
-        description="Who you buy ingredients from."
-        actions={
-          <Button onClick={openCreate} leftIcon="plus">
-            New Supplier
-          </Button>
-        }
-      />
+        description="Keep track of the partners who supply your pantry."
+      >
+        <Button onClick={openCreate}>
+          <IconPlus className="size-4" /> Add supplier
+        </Button>
+      </PageHeader>
 
-      {suppliers.length === 0 ? (
-        <Card>
-          <EmptyState title="No suppliers yet" subtitle="Add a supplier to track where your ingredients come from." icon="suppliers" />
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {suppliers.map((s) => (
-            <Card key={s.id} className="p-5">
-              <h3 className="font-display text-lg font-semibold text-crust-800">{s.name}</h3>
-              {s.contactName && <p className="text-sm text-crust-800/70">{s.contactName}</p>}
-              <p className="mt-2 text-sm text-crust-800/60">{s.email}</p>
-              <p className="text-sm text-crust-800/60">{s.phone}</p>
-              <p className="text-sm text-crust-800/60">{s.address}</p>
-              <p className="mt-2 text-xs text-crust-800/40">{s._count?.ingredients ?? 0} ingredients supplied</p>
-              <div className="mt-4 flex gap-2">
-                <Button variant="secondary" className="flex-1" leftIcon="edit" onClick={() => openEdit(s)}>
-                  Edit
-                </Button>
-                <Button variant="danger" onClick={() => setDeleteTarget(s)}>
-                  Delete
-                </Button>
-              </div>
-            </Card>
+      {loadError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Could not load suppliers</AlertTitle>
+          <AlertDescription className="flex items-center gap-3">
+            {loadError}
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Suppliers" value={String(stats.total)} icon={IconTruck} />
+        <StatCard label="Named contacts" value={String(stats.withContact)} />
+        <StatCard label="Ingredients supplied" value={String(stats.ingredients)} />
+      </div>
+
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-52" />
           ))}
         </div>
+      ) : (
+        <>
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search suppliers…"
+            className="max-w-xs"
+            aria-label="Search suppliers"
+          />
+          {filtered.length ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((supplier) => (
+                <Card key={supplier.id} className="gap-0 py-5">
+                  <CardContent className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                          <IconTruck className="size-5" />
+                        </span>
+                        <div>
+                          <p className="font-semibold">{supplier.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {supplier.contactName || "No named contact"}
+                          </p>
+                        </div>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-8">
+                            <IconDotsVertical className="size-4" />
+                            <span className="sr-only">Supplier actions</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={() => openEdit(supplier)}>
+                            <IconPencil className="size-4" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => setDeleteTarget(supplier)}
+                          >
+                            <IconTrash className="size-4" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <div className="space-y-1.5 text-sm text-muted-foreground">
+                      {supplier.email ? (
+                        <p className="flex items-center gap-2 truncate">
+                          <IconMail className="size-3.5 shrink-0" />
+                          {supplier.email}
+                        </p>
+                      ) : null}
+                      {supplier.phone ? (
+                        <p className="flex items-center gap-2">
+                          <IconPhone className="size-3.5 shrink-0" />
+                          {supplier.phone}
+                        </p>
+                      ) : null}
+                      {supplier.address ? (
+                        <p className="truncate">{supplier.address}</p>
+                      ) : null}
+                    </div>
+                    <Badge variant="secondary">
+                      {supplier._count?.ingredients ?? 0} ingredients
+                    </Badge>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-12 text-center text-sm text-muted-foreground">
+                No suppliers match your search.
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit Supplier" : "New Supplier"}>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="supplier-name">Name</Label>
-            <Input id="supplier-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div>
-            <Label htmlFor="supplier-contact-name">Contact Name</Label>
-            <Input
-              id="supplier-contact-name"
-              value={form.contactName}
-              onChange={(e) => setForm({ ...form, contactName: e.target.value })}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <Label htmlFor="supplier-email">Email</Label>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit supplier" : "Add supplier"}</DialogTitle>
+            <DialogDescription>
+              Link ingredients to suppliers from the Ingredients page.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="supplier-name">Company name</Label>
               <Input
-                id="supplier-email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                id="supplier-name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
               />
             </div>
-            <div>
-              <Label htmlFor="supplier-phone">Phone</Label>
+            <div className="space-y-2">
+              <Label htmlFor="supplier-contact">Contact name</Label>
               <Input
-                id="supplier-phone"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                id="supplier-contact"
+                value={form.contactName}
+                onChange={(e) =>
+                  setForm({ ...form, contactName: e.target.value })
+                }
               />
             </div>
-          </div>
-          <div>
-            <Label htmlFor="supplier-address">Address</Label>
-            <Input
-              id="supplier-address"
-              value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })}
-            />
-          </div>
-          {error && (
-            <p role="alert" className="text-sm text-red-600">
-              {error}
-            </p>
-          )}
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button loading={saving} onClick={() => void handleSave()} disabled={!form.name}>
-              Save Supplier
-            </Button>
-          </div>
-        </div>
-      </Modal>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="supplier-email">Email</Label>
+                <Input
+                  id="supplier-email"
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="supplier-phone">Phone</Label>
+                <Input
+                  id="supplier-phone"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="supplier-address">Address</Label>
+              <Input
+                id="supplier-address"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+              />
+            </div>
+            {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving || !form.name.trim()}>
+                {saving ? "Saving…" : editing ? "Save changes" : "Add supplier"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
-        open={!!deleteTarget}
-        title="Delete supplier"
-        message={`Remove "${deleteTarget?.name ?? ""}"? This cannot be undone.`}
-        loading={deleting}
-        onConfirm={() => void confirmDelete()}
-        onClose={() => setDeleteTarget(null)}
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title={`Delete ${deleteTarget?.name ?? "supplier"}?`}
+        description="Suppliers with linked ingredients are deactivated instead of removed so stock records stay intact."
+        onConfirm={handleDelete}
       />
     </div>
   );
 }
-
-export default Suppliers;

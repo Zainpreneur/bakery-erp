@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { ErrorState } from '@/components/ui';
+import { ErrorView } from '@/components/error-view';
 
 export default function Error({
   error,
@@ -15,8 +15,7 @@ export default function Error({
   }, [error]);
 
   return (
-    <ErrorState
-      title="Something went wrong"
+    <ErrorView
       message={error.message || 'An unexpected error interrupted this page.'}
       onRetry={retry}
     />

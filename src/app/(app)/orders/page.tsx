@@ -1,439 +1,715 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { api, apiErrorMessage } from "@/lib/api-client";
-import type { Customer, Order, OrderStatus, OrderType, Product } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
+import Link from "next/link";
+import { type ColumnDef } from "@tanstack/react-table";
+import { toast } from "sonner";
 import {
-  Badge,
-  Button,
-  Card,
-  ConfirmDialog,
-  EmptyState,
-  ErrorState,
-  Input,
-  Label,
-  LoadingState,
-  Modal,
-  PageHeader,
+  IconAlertTriangle,
+  IconCash,
+  IconClock,
+  IconDotsVertical,
+  IconEye,
+  IconPlus,
+  IconShoppingCart,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react";
+
+import { api, apiErrorMessage } from "@/lib/api-client";
+import type {
+  Customer,
+  Order,
+  OrderStatus,
+  OrderType,
+  Product,
+} from "@/lib/types";
+import { formatDate, money, titleCase } from "@/lib/format";
+import { PageHeader } from "@/components/page-header";
+import { StatCard } from "@/components/stat-card";
+import { StatusBadge } from "@/components/status-badge";
+import { DataTable, SortableHeader } from "@/components/data-table";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Select,
-  TableShell,
-  money,
-} from "@/components/ui";
-import { useToast } from "@/components/toast-provider";
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-const STATUS_FLOW: OrderStatus[] = ["PENDING", "IN_PROGRESS", "READY", "COMPLETED"];
+const STATUS_FLOW: OrderStatus[] = [
+  "PENDING",
+  "IN_PROGRESS",
+  "READY",
+  "COMPLETED",
+];
 
-interface CartLine {
-  productId: string;
-  quantity: number;
-}
+type CartLine = { productId: string; quantity: number };
 
-export function Orders() {
-  const { notify } = useToast();
-  const [orders, setOrders] = useState<Order[] | null>(null);
+export default function OrdersPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  const [modalOpen, setModalOpen] = useState(false);
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [customerId, setCustomerId] = useState("");
+  const [customerId, setCustomerId] = useState("none");
   const [orderType, setOrderType] = useState<OrderType>("WALK_IN");
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [paidAmount, setPaidAmount] = useState(0);
-  const [error, setError] = useState("");
+  const [paidAmount, setPaidAmount] = useState("0");
+  const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [paymentTarget, setPaymentTarget] = useState<Order | null>(null);
-  const [paymentInput, setPaymentInput] = useState(0);
+  const [paymentInput, setPaymentInput] = useState("0");
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null);
-  const [cancelling, setCancelling] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
     try {
       const res = await api.get<Order[]>("/orders", {
-        params: statusFilter ? { status: statusFilter } : undefined,
+        params:
+          statusFilter && statusFilter !== "all"
+            ? { status: statusFilter }
+            : undefined,
       });
       setOrders(res.data);
-      setLoadError("");
     } catch (err) {
       setLoadError(apiErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
-  }
+  }, [statusFilter]);
 
   useEffect(() => {
     void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
-
-  async function loadOrderOptions() {
-    try {
-      const [p, c] = await Promise.all([
-        api.get<Product[]>("/products", { params: { active: true } }),
-        api.get<Customer[]>("/customers"),
-      ]);
-      setProducts(p.data);
-      setCustomers(c.data);
-    } catch (err) {
-      setLoadError(apiErrorMessage(err));
-    }
-  }
+  }, [load]);
 
   useEffect(() => {
-    void loadOrderOptions();
+    let active = true;
+    void Promise.all([
+      api.get<Product[]>("/products", { params: { active: true } }),
+      api.get<Customer[]>("/customers"),
+    ])
+      .then(([p, c]) => {
+        if (!active) return;
+        setProducts(p.data);
+        setCustomers(c.data);
+      })
+      .catch((err) => {
+        if (active) toast.error(apiErrorMessage(err));
+      });
+    return () => {
+      active = false;
+    };
   }, []);
+
+  const stats = useMemo(
+    () => ({
+      active: orders.filter(
+        (o) => o.status === "PENDING" || o.status === "IN_PROGRESS" || o.status === "READY"
+      ).length,
+      awaitingPayment: orders.filter((o) => o.paymentStatus !== "PAID").length,
+      revenue: orders
+        .filter((o) => o.status !== "CANCELLED")
+        .reduce((sum, o) => sum + o.totalAmount, 0),
+      overdue: orders.filter(
+        (o) =>
+          o.dueDate &&
+          new Date(o.dueDate).getTime() < Date.now() &&
+          o.status !== "COMPLETED" &&
+          o.status !== "CANCELLED"
+      ).length,
+    }),
+    [orders]
+  );
 
   function openNewOrder() {
     setCart([]);
-    setCustomerId("");
+    setCustomerId("none");
     setOrderType("WALK_IN");
     setDueDate("");
     setNotes("");
-    setPaidAmount(0);
-    setError("");
-    setModalOpen(true);
+    setPaidAmount("0");
+    setFormError("");
+    setOrderDialogOpen(true);
   }
 
   function addToCart(productId: string) {
-    setCart((c) => {
-      const existing = c.find((l) => l.productId === productId);
-      if (existing) return c.map((l) => (l.productId === productId ? { ...l, quantity: l.quantity + 1 } : l));
-      return [...c, { productId, quantity: 1 }];
+    setCart((current) => {
+      const existing = current.find((line) => line.productId === productId);
+      if (existing) {
+        return current.map((line) =>
+          line.productId === productId
+            ? { ...line, quantity: line.quantity + 1 }
+            : line
+        );
+      }
+      return [...current, { productId, quantity: 1 }];
     });
   }
 
   function updateQty(productId: string, quantity: number) {
     if (quantity <= 0) {
-      setCart((c) => c.filter((l) => l.productId !== productId));
+      setCart((current) =>
+        current.filter((line) => line.productId !== productId)
+      );
       return;
     }
-    setCart((c) => c.map((l) => (l.productId === productId ? { ...l, quantity } : l)));
+    setCart((current) =>
+      current.map((line) =>
+        line.productId === productId ? { ...line, quantity } : line
+      )
+    );
   }
 
-  const total = useMemo(() => {
-    return cart.reduce((sum, line) => {
-      const p = products.find((x) => x.id === line.productId);
-      return sum + (p?.price ?? 0) * line.quantity;
-    }, 0);
-  }, [cart, products]);
+  const total = useMemo(
+    () =>
+      cart.reduce((sum, line) => {
+        const product = products.find((p) => p.id === line.productId);
+        return sum + (product?.price ?? 0) * line.quantity;
+      }, 0),
+    [cart, products]
+  );
 
-  async function submitOrder() {
+  async function submitOrder(event: FormEvent) {
+    event.preventDefault();
+    if (!cart.length) return;
     setSaving(true);
-    setError("");
+    setFormError("");
     try {
       await api.post("/orders", {
-        customerId: customerId || null,
+        customerId: customerId === "none" ? null : customerId,
         orderType,
         dueDate: dueDate || null,
         notes,
-        paidAmount,
-        items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity })),
+        paidAmount: Number(paidAmount) || 0,
+        items: cart,
       });
-      setModalOpen(false);
+      setOrderDialogOpen(false);
+      toast.success("Order placed", {
+        description: `${cart.reduce((sum, line) => sum + line.quantity, 0)} items added to the queue.`,
+      });
       await load();
-      notify("Order placed");
     } catch (err) {
-      setError(apiErrorMessage(err));
+      setFormError(apiErrorMessage(err));
     } finally {
       setSaving(false);
     }
   }
 
-  async function advanceStatus(order: Order) {
-    const idx = STATUS_FLOW.indexOf(order.status);
-    const next = STATUS_FLOW[idx + 1];
-    if (!next) return;
+  async function setStatus(order: Order, status: OrderStatus) {
     try {
-      await api.put(`/orders/${order.id}/status`, { status: next });
-      await load();
-      notify(`Order marked ${next.replace("_", " ").toLowerCase()}`);
-    } catch (err) {
-      notify(apiErrorMessage(err), "error");
-    }
-  }
-
-  async function confirmCancel() {
-    const order = cancelTarget;
-    if (!order) return;
-    setCancelling(true);
-    try {
-      await api.put(`/orders/${order.id}/status`, { status: "CANCELLED" });
+      await api.put(`/orders/${order.id}/status`, { status });
+      toast.success(
+        status === "CANCELLED"
+          ? `Order ${order.orderNumber} cancelled`
+          : `Order marked ${titleCase(status).toLowerCase()}`
+      );
       setCancelTarget(null);
       await load();
-      notify(`Order ${order.orderNumber} cancelled`);
     } catch (err) {
-      notify(apiErrorMessage(err), "error");
-    } finally {
-      setCancelling(false);
+      toast.error(apiErrorMessage(err));
     }
   }
 
   function openPayment(order: Order) {
     setPaymentTarget(order);
-    setPaymentInput(order.paidAmount);
+    setPaymentInput(String(order.paidAmount));
   }
 
-  async function savePayment() {
-    const target = paymentTarget;
-    if (!target) return;
+  async function savePayment(event: FormEvent) {
+    event.preventDefault();
+    if (!paymentTarget) return;
+    setSaving(true);
     try {
-      await api.put(`/orders/${target.id}/payment`, { paidAmount: paymentInput });
+      await api.put(`/orders/${paymentTarget.id}/payment`, {
+        paidAmount: Number(paymentInput) || 0,
+      });
+      toast.success("Payment saved");
       setPaymentTarget(null);
       await load();
-      notify("Payment saved");
     } catch (err) {
-      notify(apiErrorMessage(err), "error");
+      toast.error(apiErrorMessage(err));
+    } finally {
+      setSaving(false);
     }
   }
 
-  if (!orders) {
-    return loadError ? <ErrorState message={loadError} onRetry={() => void load()} /> : <LoadingState label="Loading orders…" />;
-  }
+  const columns: ColumnDef<Order>[] = useMemo(
+    () => [
+      {
+        accessorKey: "orderNumber",
+        header: ({ column }) => <SortableHeader column={column} title="Order" />,
+        cell: ({ row }) => (
+          <div className="font-medium">
+            <Link
+              href={`/orders/${row.original.id}`}
+              className="text-primary hover:underline"
+            >
+              {row.original.orderNumber}
+            </Link>
+            <p className="text-xs font-normal text-muted-foreground">
+              {titleCase(row.original.orderType)}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "customer",
+        header: "Customer",
+        cell: ({ row }) =>
+          row.original.customer ? (
+            <Link
+              href={`/customers/${row.original.customer.id}`}
+              className="hover:underline"
+            >
+              {row.original.customer.name}
+            </Link>
+          ) : (
+            "Walk-in"
+          ),
+      },
+      {
+        id: "items",
+        header: "Items",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.items.reduce((sum, item) => sum + item.quantity, 0)} items
+          </span>
+        ),
+      },
+      {
+        accessorKey: "totalAmount",
+        header: ({ column }) => <SortableHeader column={column} title="Total" />,
+        cell: ({ row }) => (
+          <span className="font-medium tabular-nums">
+            {money(row.original.totalAmount)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "paymentStatus",
+        header: "Payment",
+        cell: ({ row }) => (
+          <button
+            type="button"
+            onClick={() => openPayment(row.original)}
+            className="rounded-md"
+            aria-label={`Edit payment for ${row.original.orderNumber}`}
+          >
+            <StatusBadge status={row.original.paymentStatus} />
+          </button>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
+      },
+      {
+        accessorKey: "createdAt",
+        header: ({ column }) => <SortableHeader column={column} title="Placed" />,
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {formatDate(row.original.createdAt)}
+          </span>
+        ),
+      },
+      {
+        id: "actions",
+        enableHiding: false,
+        cell: ({ row }) => {
+          const order = row.original;
+          const next = STATUS_FLOW[STATUS_FLOW.indexOf(order.status) + 1];
+          return (
+            <div className="flex justify-end">
+              {next ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void setStatus(order, next)}
+                >
+                  Mark {titleCase(next).toLowerCase()}
+                </Button>
+              ) : null}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="size-8">
+                    <IconDotsVertical className="size-4" />
+                    <span className="sr-only">Order actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem asChild>
+                    <Link href={`/orders/${order.id}`}>
+                      <IconEye className="size-4" /> View order
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => openPayment(order)}>
+                    <IconCash className="size-4" /> Edit payment
+                  </DropdownMenuItem>
+                  {order.status !== "COMPLETED" &&
+                  order.status !== "CANCELLED" ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setCancelTarget(order)}
+                      >
+                        <IconX className="size-4" /> Cancel order
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          );
+        },
+      },
+    ],
+    []
+  );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
         title="Orders & POS"
-        description="Take new orders and track fulfillment."
-        actions={
-          <Button onClick={openNewOrder} leftIcon="plus">
-            New Order
-          </Button>
-        }
-      />
+        description="Take new orders and follow them through to handoff."
+      >
+        <Button onClick={openNewOrder}>
+          <IconPlus className="size-4" /> New order
+        </Button>
+      </PageHeader>
 
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter orders by status">
-        {["", "PENDING", "IN_PROGRESS", "READY", "COMPLETED", "CANCELLED"].map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setStatusFilter(s)}
-            aria-pressed={statusFilter === s}
-            className={`inline-flex min-h-9 items-center rounded-full px-3.5 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-550 ${
-              statusFilter === s ? "bg-crust-700 text-white shadow-sm" : "bg-cream-200 text-crust-800/70 hover:bg-cream-200/70"
-            }`}
-          >
-            {s === "" ? "All" : s.replace("_", " ")}
-          </button>
-        ))}
+      {loadError ? (
+        <Alert variant="destructive">
+          <AlertTitle>Could not load orders</AlertTitle>
+          <AlertDescription className="flex items-center gap-3">
+            {loadError}
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              Retry
+            </Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Active orders"
+          value={String(stats.active)}
+          hint="In the production queue"
+          icon={IconShoppingCart}
+        />
+        <StatCard
+          label="Awaiting payment"
+          value={String(stats.awaitingPayment)}
+          hint="Unpaid or partially paid"
+          icon={IconCash}
+        />
+        <StatCard
+          label="Order value"
+          value={money(stats.revenue)}
+          hint="Excludes cancelled orders"
+        />
+        <StatCard
+          label="Past due"
+          value={String(stats.overdue)}
+          hint={stats.overdue ? "Need attention" : "Nothing overdue"}
+          icon={stats.overdue ? IconAlertTriangle : IconClock}
+        />
       </div>
 
-      {orders.length === 0 ? (
-        <Card>
-          <EmptyState title="No orders found" subtitle="Orders matching this filter will appear here." icon="orders" />
-        </Card>
+      <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+          {[
+            ["all", "All"],
+            ["PENDING", "Pending"],
+            ["IN_PROGRESS", "In progress"],
+            ["READY", "Ready"],
+            ["COMPLETED", "Completed"],
+            ["CANCELLED", "Cancelled"],
+          ].map(([value, label]) => (
+            <TabsTrigger key={value} value={value} className="px-3">
+              {label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {loading ? (
+        <div className="space-y-4">
+          <Skeleton className="h-10 max-w-xs" />
+          <Skeleton className="h-96" />
+        </div>
       ) : (
-        <TableShell label="Orders">
-          <table className="min-w-[640px] w-full text-left text-sm">
-            <caption className="sr-only">Orders with their totals, payment, and fulfillment status</caption>
-            <thead className="border-b border-crust-800/10 text-xs uppercase tracking-wide text-crust-800/50">
-              <tr>
-                <th className="px-4 py-3">Order #</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Items</th>
-                <th className="px-4 py-3">Total</th>
-                <th className="px-4 py-3">Payment</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Placed</th>
-                <th className="px-4 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-crust-800/5">
-              {orders.map((o) => (
-                <tr key={o.id} className="hover:bg-cream-50">
-                  <td className="px-4 py-3 font-medium text-crust-800">{o.orderNumber}</td>
-                  <td className="px-4 py-3 text-crust-800/70">{o.customer?.name ?? "Walk-in"}</td>
-                  <td className="px-4 py-3 text-crust-800/60">
-                    {o.items.map((i) => `${i.quantity}× ${i.product.name}`).join(", ")}
-                  </td>
-                  <td className="px-4 py-3 font-medium">{money(o.totalAmount)}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => openPayment(o)}
-                      aria-label={`Edit payment for order ${o.orderNumber}`}
-                    >
-                      <Badge value={o.paymentStatus} />
-                    </button>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge value={o.status} />
-                  </td>
-                  <td className="px-4 py-3 text-crust-800/50">{new Date(o.createdAt).toLocaleDateString()}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      {STATUS_FLOW.indexOf(o.status) < STATUS_FLOW.length - 1 && o.status !== "CANCELLED" && (
-                        <Button variant="secondary" size="sm" onClick={() => void advanceStatus(o)}>
-                          Mark {STATUS_FLOW[STATUS_FLOW.indexOf(o.status) + 1]?.replace("_", " ")}
-                        </Button>
-                      )}
-                      {o.status !== "COMPLETED" && o.status !== "CANCELLED" && (
-                        <Button variant="danger" size="sm" onClick={() => setCancelTarget(o)}>
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableShell>
+        <DataTable
+          columns={columns}
+          data={orders}
+          searchKey="orderNumber"
+          searchPlaceholder="Search order number…"
+        />
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="New Order" width="max-w-3xl">
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <div>
-            <Label>Products</Label>
-            <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-crust-800/10 p-2">
-              {products.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => addToCart(p.id)}
-                  className="rounded-lg border border-crust-800/10 p-2 text-left text-sm hover:border-amber-550 hover:bg-amber-50"
-                >
-                  <p className="font-medium text-crust-800">{p.name}</p>
-                  <p className="text-xs text-crust-800/50">{money(p.price)}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <Label>Cart</Label>
-              {cart.length === 0 ? (
-                <p className="text-sm italic text-crust-800/40">No items added yet — click a product to add it.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {cart.map((line) => {
-                    const p = products.find((x) => x.id === line.productId);
-                    return (
-                      <li key={line.productId} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="flex-1 text-crust-800">{p?.name}</span>
-                        <Input
-                          id={`order-cart-quantity-${line.productId}`}
-                          type="number"
-                          min="0"
-                          className="w-16"
-                          value={line.quantity}
-                          aria-label={`Quantity of ${p?.name ?? "product"}`}
-                          onChange={(e) => updateQty(line.productId, Number(e.target.value))}
-                        />
-                        <span className="w-16 text-right text-crust-800/60">
-                          {money((p?.price ?? 0) * line.quantity)}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <div className="mt-2 flex justify-between border-t border-crust-800/10 pt-2 font-semibold text-crust-800">
-                <span>Total</span>
-                <span>{money(total)}</span>
+      <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>New order</DialogTitle>
+            <DialogDescription>
+              Pick products, then set the customer and payment details. Recipe
+              stock is deducted automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitOrder} className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Products</Label>
+              <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto rounded-lg border p-2">
+                {products.length ? (
+                  products.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onClick={() => addToCart(product.id)}
+                      className="rounded-lg border p-2.5 text-left transition hover:border-primary/50 hover:bg-accent"
+                    >
+                      <span className="block truncate text-sm font-medium">
+                        {product.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {money(product.price)}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">
+                    No active products. Add products first.
+                  </p>
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="order-customer">Customer</Label>
-                <Select id="order-customer" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                  <option value="">Walk-in</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Cart</Label>
+                {cart.length === 0 ? (
+                  <p className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                    Click a product to add it to the order.
+                  </p>
+                ) : (
+                  <ul className="max-h-40 space-y-2 overflow-y-auto">
+                    {cart.map((line) => {
+                      const product = products.find(
+                        (p) => p.id === line.productId
+                      );
+                      return (
+                        <li
+                          key={line.productId}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {product?.name ?? "Product"}
+                          </span>
+                          <Input
+                            type="number"
+                            min="0"
+                            className="h-8 w-16"
+                            value={line.quantity}
+                            aria-label={`Quantity of ${product?.name ?? "product"}`}
+                            onChange={(e) =>
+                              updateQty(line.productId, Number(e.target.value))
+                            }
+                          />
+                          <span className="w-20 text-right tabular-nums">
+                            {money((product?.price ?? 0) * line.quantity)}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            aria-label={`Remove ${product?.name ?? "product"}`}
+                            onClick={() => updateQty(line.productId, 0)}
+                          >
+                            <IconTrash className="size-4" />
+                          </Button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <div className="flex justify-between border-t pt-2 text-base font-semibold">
+                  <span>Total</span>
+                  <span className="tabular-nums">{money(total)}</span>
+                </div>
               </div>
-              <div>
-                <Label htmlFor="order-type">Order Type</Label>
-                <Select id="order-type" value={orderType} onChange={(e) => setOrderType(e.target.value as OrderType)}>
-                  <option value="WALK_IN">Walk-in</option>
-                  <option value="PHONE">Phone</option>
-                  <option value="ONLINE">Online</option>
-                  <option value="CATERING">Catering</option>
-                </Select>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Customer</Label>
+                  <Select value={customerId} onValueChange={setCustomerId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Walk-in</SelectItem>
+                      {customers.map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id}>
+                          {customer.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Order type</Label>
+                  <Select
+                    value={orderType}
+                    onValueChange={(value) => setOrderType(value as OrderType)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="WALK_IN">Walk-in</SelectItem>
+                      <SelectItem value="PHONE">Phone</SelectItem>
+                      <SelectItem value="ONLINE">Online</SelectItem>
+                      <SelectItem value="CATERING">Catering</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="order-due-date">Due Date</Label>
-                <Input id="order-due-date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="order-due">Due date</Label>
+                  <Input
+                    id="order-due"
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="order-paid">Amount paid now</Label>
+                  <Input
+                    id="order-paid"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={paidAmount}
+                    onChange={(e) => setPaidAmount(e.target.value)}
+                  />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="order-paid-amount">Amount Paid Now ($)</Label>
-                <Input
-                  id="order-paid-amount"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={paidAmount}
-                  onChange={(e) => setPaidAmount(Number(e.target.value))}
+
+              <div className="space-y-2">
+                <Label htmlFor="order-notes">Notes</Label>
+                <Textarea
+                  id="order-notes"
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Special instructions, allergies, pickup time…"
                 />
               </div>
-            </div>
-            <div>
-              <Label htmlFor="order-notes">Notes</Label>
-              <Input id="order-notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
-            </div>
 
-            {error && (
-              <p role="alert" className="text-sm text-red-600">
-                {error}
-              </p>
-            )}
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={() => setModalOpen(false)}>
+              {formError ? (
+                <p className="text-sm text-destructive">{formError}</p>
+              ) : null}
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOrderDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={saving || cart.length === 0}>
+                  {saving ? "Placing…" : "Place order"}
+                </Button>
+              </DialogFooter>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={paymentTarget !== null} onOpenChange={(open) => !open && setPaymentTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Payment · {paymentTarget?.orderNumber}</DialogTitle>
+            <DialogDescription>
+              Total due: {money(paymentTarget?.totalAmount ?? 0)}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={savePayment} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="payment-amount">Amount paid</Label>
+              <Input
+                id="payment-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={paymentInput}
+                onChange={(e) => setPaymentInput(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPaymentTarget(null)}
+              >
                 Cancel
               </Button>
-              <Button loading={saving} onClick={() => void submitOrder()} disabled={cart.length === 0}>
-                Place Order
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : "Save payment"}
               </Button>
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal open={!!paymentTarget} onClose={() => setPaymentTarget(null)} title={`Payment — ${paymentTarget?.orderNumber ?? ""}`}>
-        <div className="space-y-4">
-          <p className="text-sm text-crust-800/60">
-            Total due: <strong>{money(paymentTarget?.totalAmount)}</strong>
-          </p>
-          <div>
-            <Label htmlFor="order-payment-amount">Amount Paid</Label>
-            <Input
-              id="order-payment-amount"
-              type="number"
-              step="0.01"
-              min="0"
-              value={paymentInput}
-              onChange={(e) => setPaymentInput(Number(e.target.value))}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setPaymentTarget(null)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void savePayment()}>Save Payment</Button>
-          </div>
-        </div>
-      </Modal>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
-        open={!!cancelTarget}
-        title="Cancel order"
-        message={`Cancel order ${cancelTarget?.orderNumber ?? ""}? Ingredients will be restocked.`}
+        open={cancelTarget !== null}
+        onOpenChange={(open) => !open && setCancelTarget(null)}
+        title={`Cancel order ${cancelTarget?.orderNumber ?? ""}?`}
+        description="Cancelling returns any deducted ingredients to stock. This cannot be undone."
         confirmLabel="Cancel order"
-        loading={cancelling}
-        onConfirm={() => void confirmCancel()}
-        onClose={() => setCancelTarget(null)}
+        onConfirm={() =>
+          cancelTarget ? setStatus(cancelTarget, "CANCELLED") : Promise.resolve()
+        }
       />
     </div>
   );
 }
-
-export default Orders;

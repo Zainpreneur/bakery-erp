@@ -100,6 +100,7 @@ export interface Order {
   paidAmount: number;
   createdAt: string;
   items: OrderItem[];
+  createdBy?: { id: string; name: string; email: string } | null;
 }
 
 export interface Expense {

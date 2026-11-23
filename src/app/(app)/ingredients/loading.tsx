@@ -1,5 +1,15 @@
-import { LoadingState } from '@/components/ui';
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
-  return <LoadingState label="Preparing your workspace…" />;
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-12 w-80" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-32" />
+        ))}
+      </div>
+      <Skeleton className="h-96" />
+    </div>
+  );
 }

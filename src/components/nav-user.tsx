@@ -9,6 +9,7 @@ import {
 } from "@tabler/icons-react";
 
 import type { AuthUser } from "@/lib/types";
+import { startThemeTransition } from "@/lib/theme-transition";
 import { useAuth } from "@/components/auth-provider";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -90,8 +91,11 @@ export function NavUser({ user }: { user: AuthUser }) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() =>
-                setTheme(resolvedTheme === "dark" ? "light" : "dark")
+              onClick={(event) =>
+                startThemeTransition(
+                  () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
+                  event.nativeEvent
+                )
               }
             >
               {resolvedTheme === "dark" ? (

@@ -11,6 +11,7 @@ import {
   IconPalette,
 } from "@tabler/icons-react";
 
+import { startThemeTransition } from "@/lib/theme-transition";
 import {
   type ThemeConfig,
   defaultConfig,
@@ -173,7 +174,7 @@ function OptionButton({
   children,
 }: {
   active: boolean;
-  onClick: () => void;
+  onClick: React.MouseEventHandler<HTMLButtonElement>;
   children: React.ReactNode;
 }) {
   return (
@@ -218,13 +219,13 @@ export function ThemeCustomizer() {
           <div className="space-y-6 p-4">
             <Section label="Mode">
               <div className="grid grid-cols-3 gap-2">
-                <OptionButton active={theme === "light"} onClick={() => setTheme("light")}>
+                <OptionButton active={theme === "light"} onClick={(e) => startThemeTransition(() => setTheme("light"), e.nativeEvent)}>
                   <IconSun className="size-4" /> Light
                 </OptionButton>
-                <OptionButton active={theme === "dark"} onClick={() => setTheme("dark")}>
+                <OptionButton active={theme === "dark"} onClick={(e) => startThemeTransition(() => setTheme("dark"), e.nativeEvent)}>
                   <IconMoon className="size-4" /> Dark
                 </OptionButton>
-                <OptionButton active={theme === "system"} onClick={() => setTheme("system")}>
+                <OptionButton active={theme === "system"} onClick={(e) => startThemeTransition(() => setTheme("system"), e.nativeEvent)}>
                   <IconDeviceDesktop className="size-4" /> Auto
                 </OptionButton>
               </div>

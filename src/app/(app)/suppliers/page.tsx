@@ -19,6 +19,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -336,9 +337,9 @@ export default function SuppliersPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving || !form.name.trim()}>
-                {saving ? "Saving…" : editing ? "Save changes" : "Add supplier"}
-              </Button>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Saving supplier" disabled={!form.name.trim()}>
+                {editing ? "Save changes" : "Add supplier"}
+              </LoadingButton>
             </DialogFooter>
           </form>
         </DialogContent>

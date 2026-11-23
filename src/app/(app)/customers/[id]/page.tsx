@@ -28,6 +28,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { ErrorView } from "@/components/error-view";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -526,9 +527,9 @@ export default function CustomerDetailPage({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving || !form.name.trim()}>
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Saving customer" disabled={!form.name.trim()}>
+                Save changes
+              </LoadingButton>
             </DialogFooter>
           </form>
         </DialogContent>

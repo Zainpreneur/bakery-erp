@@ -21,7 +21,7 @@ export function StatCard({
 }) {
   const positive = trend === "up";
   return (
-    <Card className="gap-0 py-5">
+    <Card className="animate-section-in gap-0 py-5 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-md motion-reduce:transform-none motion-reduce:transition-none">
       <CardContent className="space-y-3">
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>

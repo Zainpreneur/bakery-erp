@@ -23,6 +23,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { ErrorView } from "@/components/error-view";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -649,9 +650,9 @@ export default function OrderDetailPage({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save payment"}
-              </Button>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Saving payment">
+                Save payment
+              </LoadingButton>
             </DialogFooter>
           </form>
         </DialogContent>

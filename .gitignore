@@ -10,6 +10,9 @@ npm-debug.log*
 .next/
 tsconfig.tsbuildinfo
 
+# Uploaded images (stored outside public/ and served via /api/uploads)
+.data/
+
 # Prisma / SQLite
 server/prisma/dev.db
 server/prisma/dev.db-journal

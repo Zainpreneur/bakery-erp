@@ -4,7 +4,6 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  IconBell,
   IconSearch,
   IconLogout,
   IconShoppingCart,
@@ -17,6 +16,8 @@ import { useAuth } from "@/components/auth-provider";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { InfoPanelTrigger } from "@/components/info-panel";
+import { NotificationBell } from "@/components/notification-bell";
 import { CustomizerButton } from "@/components/theme-customizer";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -140,25 +141,10 @@ export function AppHeader({ user }: { user: AuthUser }) {
           <IconSearch className="size-5" />
         </Button>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="rounded-full" aria-label="Quick actions">
-              <IconBell className="size-5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuLabel>Quick actions</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => go("/orders")}>
-              <IconShoppingCart className="size-4" /> Open orders &amp; POS
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => go("/ingredients")}>
-              <IconBell className="size-4" /> Check ingredient stock
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <NotificationBell />
 
         <ThemeToggle />
+        <InfoPanelTrigger />
         <CustomizerButton />
         <div className="mx-1 h-6 w-px shrink-0 self-center bg-border" />
         <DropdownMenu>

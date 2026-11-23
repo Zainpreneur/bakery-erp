@@ -8,6 +8,8 @@ import { IconBread } from "@tabler/icons-react";
 import { useAuth } from "@/components/auth-provider";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
+import { ConfirmProvider } from "@/components/confirm-provider";
+import { InfoPanelProvider } from "@/components/info-panel";
 import { ThemeCustomizer } from "@/components/theme-customizer";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,14 +35,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={0}>
-      <SidebarProvider>
-        <AppSidebar user={user} />
-        <SidebarInset className="min-w-0">
-          <AppHeader user={user} />
-          <main className="app-main min-w-0 flex-1 p-4 md:p-6">{children}</main>
-        </SidebarInset>
-        <ThemeCustomizer />
-      </SidebarProvider>
+      <ConfirmProvider>
+        <InfoPanelProvider>
+          <SidebarProvider>
+            <AppSidebar user={user} />
+            <SidebarInset className="min-w-0">
+              <AppHeader user={user} />
+              <main className="app-main min-w-0 flex-1 p-4 md:p-6">{children}</main>
+            </SidebarInset>
+            <ThemeCustomizer />
+          </SidebarProvider>
+        </InfoPanelProvider>
+      </ConfirmProvider>
     </TooltipProvider>
   );
 }

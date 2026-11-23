@@ -32,13 +32,21 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { LoadingButton } from "@/components/ui/loading-button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -201,8 +209,18 @@ export default function CustomersPage() {
           ),
       },
       {
+        accessorKey: "createdAt",
+        header: ({ column }) => <SortableHeader column={column} title="Joined" />,
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {formatDate(row.original.createdAt)}
+          </span>
+        ),
+      },
+      {
         id: "orders",
         header: "Orders",
+        accessorFn: (customer) => customer._count?.orders ?? 0,
         cell: ({ row }) => (
           <Badge variant="secondary" className="tabular-nums">
             {row.original._count?.orders ?? 0}
@@ -290,83 +308,104 @@ export default function CustomersPage() {
           data={customers}
           searchKey="name"
           searchPlaceholder="Search customers…"
+          dateFilters={[{ columnId: "createdAt", label: "Added" }]}
+          numberFilters={[
+            {
+              columnId: "orders",
+              label: "Orders",
+              min: 0,
+              max: Math.max(5, Math.max(...customers.map((c) => c._count?.orders ?? 0), 0)),
+              format: (value) => String(value),
+            },
+          ]}
         />
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit customer" : "Add customer"}</DialogTitle>
-            <DialogDescription>
+      <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>{editing ? "Edit customer" : "Add customer"}</SheetTitle>
+            <SheetDescription>
               Contact details make it easier to take phone and catering orders.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="customer-name">Name</Label>
-              <Input
-                id="customer-name"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Jane Doe"
-                required
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="customer-email">Email</Label>
+            </SheetDescription>
+          </SheetHeader>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-6">
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="customer-name">Name</FieldLabel>
                 <Input
-                  id="customer-email"
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  placeholder="jane@example.com"
+                  id="customer-name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Jane Doe"
+                  required
                 />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="customer-email">Email</FieldLabel>
+                  <Input
+                    id="customer-email"
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="jane@example.com"
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="customer-phone">Phone</FieldLabel>
+                  <Input
+                    id="customer-phone"
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    placeholder="(555) 123-4567"
+                  />
+                </Field>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="customer-phone">Phone</Label>
+              <Field>
+                <FieldLabel htmlFor="customer-address">Address</FieldLabel>
                 <Input
-                  id="customer-phone"
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="(555) 123-4567"
+                  id="customer-address"
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
                 />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="customer-address">Address</Label>
-              <Input
-                id="customer-address"
-                value={form.address}
-                onChange={(e) => setForm({ ...form, address: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="customer-notes">Notes</Label>
-              <Textarea
-                id="customer-notes"
-                rows={2}
-                value={form.notes}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="Allergies, favourite items, standing instructions…"
-              />
-            </div>
-            {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
-            <DialogFooter>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="customer-notes">Notes</FieldLabel>
+                <Textarea
+                  id="customer-notes"
+                  rows={3}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Allergies, favourite items, standing instructions…"
+                />
+                <FieldDescription>
+                  These notes appear on the customer&apos;s 360 profile.
+                </FieldDescription>
+              </Field>
+              {formError ? <FieldError role="alert">{formError}</FieldError> : null}
+            </FieldGroup>
+            <SheetFooter className="gap-2 sm:gap-2">
               <Button
                 type="button"
                 variant="outline"
+                className="sm:ml-auto"
                 onClick={() => setDialogOpen(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving || !form.name.trim()}>
-                {saving ? "Saving…" : editing ? "Save changes" : "Add customer"}
-              </Button>
-            </DialogFooter>
+              <LoadingButton
+                type="submit"
+                loading={saving}
+                loadingLabel="Saving customer"
+                disabled={!form.name.trim()}
+              >
+                {editing ? "Save changes" : "Add customer"}
+              </LoadingButton>
+            </SheetFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       <ConfirmDialog
         open={deleteTarget !== null}

@@ -22,6 +22,7 @@ import { DataTable, SortableHeader } from "@/components/data-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { StatCard } from "@/components/stat-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -278,6 +287,7 @@ export default function IngredientsPage() {
       {
         id: "supplier",
         header: "Supplier",
+        accessorFn: (item) => item.supplier?.name ?? "",
         cell: ({ row }) =>
           row.original.supplier?.name ?? (
             <span className="text-muted-foreground">—</span>
@@ -366,6 +376,34 @@ export default function IngredientsPage() {
           data={ingredients}
           searchKey="name"
           searchPlaceholder="Search ingredients…"
+          facetedFilters={[
+            {
+              columnId: "supplier",
+              title: "Supplier",
+              options: Array.from(
+                new Set(ingredients.map((i) => i.supplier?.name).filter((name): name is string => Boolean(name)))
+              )
+                .sort()
+                .map((value) => ({ label: value, value })),
+            },
+          ]}
+          numberFilters={[
+            {
+              columnId: "quantityInStock",
+              label: "In stock",
+              min: 0,
+              max: Math.max(10, Math.ceil(Math.max(...ingredients.map((i) => i.quantityInStock), 0) / 10) * 10),
+              format: (value) => String(value),
+            },
+            {
+              columnId: "costPerUnit",
+              label: "Unit cost",
+              min: 0,
+              max: Math.max(10, Math.ceil(Math.max(...ingredients.map((i) => i.costPerUnit), 0) * 10) / 10),
+              step: 0.5,
+              format: money,
+            },
+          ]}
           toolbar={
             stats.low > 0 ? (
               <Badge variant="secondary" className="gap-1 text-amber-600 dark:text-amber-400">
@@ -376,15 +414,15 @@ export default function IngredientsPage() {
         />
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit ingredient" : "Add ingredient"}</DialogTitle>
-            <DialogDescription>
+      <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>{editing ? "Edit ingredient" : "Add ingredient"}</SheetTitle>
+            <SheetDescription>
               Quantities are stored in the unit you choose here.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+            </SheetDescription>
+          </SheetHeader>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="ingredient-name">Name</Label>
@@ -468,17 +506,17 @@ export default function IngredientsPage() {
               </div>
             </div>
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
-            <DialogFooter>
+            <SheetFooter className="gap-2 sm:gap-2">
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : editing ? "Save changes" : "Create ingredient"}
-              </Button>
-            </DialogFooter>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Saving ingredient">
+                {editing ? "Save changes" : "Create ingredient"}
+              </LoadingButton>
+            </SheetFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={adjustTarget !== null} onOpenChange={(open) => !open && setAdjustTarget(null)}>
         <DialogContent>
@@ -539,9 +577,9 @@ export default function IngredientsPage() {
               <Button type="button" variant="outline" onClick={() => setAdjustTarget(null)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Record movement"}
-              </Button>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Recording movement">
+                Record movement
+              </LoadingButton>
             </DialogFooter>
           </form>
         </DialogContent>

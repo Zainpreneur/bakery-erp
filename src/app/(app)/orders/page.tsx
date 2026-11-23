@@ -7,13 +7,18 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import {
   IconAlertTriangle,
+  IconArrowLeft,
+  IconArrowRight,
   IconCash,
+  IconCheck,
   IconClock,
   IconDotsVertical,
   IconEye,
+  IconPackage,
   IconPlus,
   IconShoppingCart,
   IconTrash,
+  IconUser,
   IconX,
 } from "@tabler/icons-react";
 
@@ -27,10 +32,29 @@ import type {
 } from "@/lib/types";
 import { formatDate, money, titleCase } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
+import { CustomerHoverCard } from "@/components/customer-hover-card";
 import { StatCard } from "@/components/stat-card";
 import { StatusBadge } from "@/components/status-badge";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useConfirm } from "@/components/confirm-provider";
+import { LoadingButton } from "@/components/ui/loading-button";
+import { Stepper } from "@/components/ui/stepper";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,7 +94,28 @@ const STATUS_FLOW: OrderStatus[] = [
 
 type CartLine = { productId: string; quantity: number };
 
+const ORDER_WIZARD_STEPS = [
+  { title: "Items", description: "Pick products" },
+  { title: "Details", description: "Customer & timing" },
+  { title: "Payment", description: "Review & place" },
+];
+
+const ORDER_STATUS_OPTIONS = [
+  { label: "Pending", value: "PENDING" },
+  { label: "In progress", value: "IN_PROGRESS" },
+  { label: "Ready", value: "READY" },
+  { label: "Completed", value: "COMPLETED" },
+  { label: "Cancelled", value: "CANCELLED" },
+];
+
+const PAYMENT_STATUS_OPTIONS = [
+  { label: "Unpaid", value: "UNPAID" },
+  { label: "Partial", value: "PARTIAL" },
+  { label: "Paid", value: "PAID" },
+];
+
 export default function OrdersPage() {
+  const confirm = useConfirm();
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -87,6 +132,7 @@ export default function OrdersPage() {
   const [paidAmount, setPaidAmount] = useState("0");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
 
   const [paymentTarget, setPaymentTarget] = useState<Order | null>(null);
   const [paymentInput, setPaymentInput] = useState("0");
@@ -161,6 +207,7 @@ export default function OrdersPage() {
     setNotes("");
     setPaidAmount("0");
     setFormError("");
+    setWizardStep(0);
     setOrderDialogOpen(true);
   }
 
@@ -201,9 +248,22 @@ export default function OrdersPage() {
     [cart, products]
   );
 
+  function goNext() {
+    setFormError("");
+    if (wizardStep === 0 && cart.length === 0) {
+      setFormError("Add at least one product to the order.");
+      return;
+    }
+    setWizardStep((step) => Math.min(step + 1, ORDER_WIZARD_STEPS.length - 1));
+  }
+
   async function submitOrder(event: FormEvent) {
     event.preventDefault();
-    if (!cart.length) return;
+    if (!cart.length) {
+      setFormError("Add at least one product to the order.");
+      setWizardStep(0);
+      return;
+    }
     setSaving(true);
     setFormError("");
     try {
@@ -289,12 +349,14 @@ export default function OrdersPage() {
         header: "Customer",
         cell: ({ row }) =>
           row.original.customer ? (
-            <Link
-              href={`/customers/${row.original.customer.id}`}
-              className="hover:underline"
-            >
-              {row.original.customer.name}
-            </Link>
+            <CustomerHoverCard customer={row.original.customer}>
+              <Link
+                href={`/customers/${row.original.customer.id}`}
+                className="hover:underline"
+              >
+                {row.original.customer.name}
+              </Link>
+            </CustomerHoverCard>
           ) : (
             "Walk-in"
           ),
@@ -477,6 +539,75 @@ export default function OrdersPage() {
           data={orders}
           searchKey="orderNumber"
           searchPlaceholder="Search order number…"
+          facetedFilters={[
+            { columnId: "status", title: "Status", options: ORDER_STATUS_OPTIONS },
+            { columnId: "paymentStatus", title: "Payment", options: PAYMENT_STATUS_OPTIONS },
+          ]}
+          dateFilters={[{ columnId: "createdAt", label: "Placed" }]}
+          numberFilters={[
+            {
+              columnId: "totalAmount",
+              label: "Value",
+              min: 0,
+              max: Math.max(100, Math.ceil(Math.max(...orders.map((o) => o.totalAmount), 0) / 10) * 10),
+              step: 5,
+              format: money,
+            },
+          ]}
+          rowContextMenu={(order) => {
+            const next = STATUS_FLOW[STATUS_FLOW.indexOf(order.status) + 1];
+            return (
+              <>
+                <ContextMenuItem asChild>
+                  <Link href={`/orders/${order.id}`}>
+                    <IconEye className="size-4" /> View order
+                  </Link>
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => openPayment(order)}>
+                  <IconCash className="size-4" /> Edit payment
+                </ContextMenuItem>
+                {next ? (
+                  <ContextMenuItem onSelect={() => void setStatus(order, next)}>
+                    <IconCheck className="size-4" /> Mark {titleCase(next).toLowerCase()}
+                  </ContextMenuItem>
+                ) : null}
+                {order.status !== "COMPLETED" && order.status !== "CANCELLED" ? (
+                  <>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      variant="destructive"
+                      onSelect={() => {
+                        void confirm({
+                          title: `Cancel order ${order.orderNumber}?`,
+                          description: "Deducted ingredients will be returned to stock. This cannot be undone.",
+                          confirmLabel: "Cancel order",
+                          destructive: true,
+                        }).then((ok) => {
+                          if (ok) void setStatus(order, "CANCELLED");
+                        });
+                      }}
+                    >
+                      <IconX className="size-4" /> Cancel order
+                    </ContextMenuItem>
+                  </>
+                ) : null}
+              </>
+            );
+          }}
+          emptyState={
+            <Empty className="rounded-none border-0 py-14">
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><IconShoppingCart /></EmptyMedia>
+                <EmptyTitle>No orders yet</EmptyTitle>
+                <EmptyDescription>
+                  Place your first order to see it in the queue.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button size="sm" onClick={openNewOrder}>New order</Button>
+              </EmptyContent>
+            </Empty>
+          }
         />
       )}
 
@@ -485,130 +616,155 @@ export default function OrdersPage() {
           <DialogHeader>
             <DialogTitle>New order</DialogTitle>
             <DialogDescription>
-              Pick products, then set the customer and payment details. Recipe
-              stock is deducted automatically.
+              {wizardStep === 0
+                ? "Pick the products for this order. Recipe stock is deducted automatically."
+                : wizardStep === 1
+                  ? "Add the customer and timing details."
+                  : "Review the order and record any payment received now."}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={submitOrder} className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Products</Label>
-              <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto rounded-lg border p-2">
-                {products.length ? (
-                  products.map((product) => (
-                    <button
-                      key={product.id}
-                      type="button"
-                      onClick={() => addToCart(product.id)}
-                      className="rounded-lg border p-2.5 text-left transition hover:border-primary/50 hover:bg-accent"
-                    >
-                      <span className="block truncate text-sm font-medium">
-                        {product.name}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {money(product.price)}
-                      </span>
-                    </button>
-                  ))
-                ) : (
-                  <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">
-                    No active products. Add products first.
-                  </p>
-                )}
-              </div>
-            </div>
 
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Cart</Label>
-                {cart.length === 0 ? (
-                  <p className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                    Click a product to add it to the order.
-                  </p>
-                ) : (
-                  <ul className="max-h-40 space-y-2 overflow-y-auto">
-                    {cart.map((line) => {
-                      const product = products.find(
-                        (p) => p.id === line.productId
-                      );
-                      return (
-                        <li
-                          key={line.productId}
-                          className="flex items-center gap-2 text-sm"
+          <div className="py-1">
+            <Stepper steps={ORDER_WIZARD_STEPS} currentStep={wizardStep + 1} />
+          </div>
+
+          <form onSubmit={submitOrder} className="space-y-5">
+            {wizardStep === 0 ? (
+              <div className="grid gap-5 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Products</Label>
+                  <div className="grid max-h-80 grid-cols-2 gap-2 overflow-y-auto rounded-lg border p-2">
+                    {products.length ? (
+                      products.map((product) => (
+                        <button
+                          key={product.id}
+                          type="button"
+                          onClick={() => addToCart(product.id)}
+                          className="rounded-lg border p-2.5 text-left transition hover:border-primary/50 hover:bg-accent"
                         >
-                          <span className="min-w-0 flex-1 truncate">
-                            {product?.name ?? "Product"}
+                          <span className="block truncate text-sm font-medium">
+                            {product.name}
                           </span>
-                          <Input
-                            type="number"
-                            min="0"
-                            className="h-8 w-16"
-                            value={line.quantity}
-                            aria-label={`Quantity of ${product?.name ?? "product"}`}
-                            onChange={(e) =>
-                              updateQty(line.productId, Number(e.target.value))
-                            }
-                          />
-                          <span className="w-20 text-right tabular-nums">
-                            {money((product?.price ?? 0) * line.quantity)}
+                          <span className="text-xs text-muted-foreground">
+                            {money(product.price)}
                           </span>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-7"
-                            aria-label={`Remove ${product?.name ?? "product"}`}
-                            onClick={() => updateQty(line.productId, 0)}
+                        </button>
+                      ))
+                    ) : (
+                      <p className="col-span-2 py-6 text-center text-sm text-muted-foreground">
+                        No active products. Add products first.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Cart</Label>
+                    {cart.length ? (
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {cart.reduce((sum, line) => sum + line.quantity, 0)} items
+                      </span>
+                    ) : null}
+                  </div>
+                  {cart.length === 0 ? (
+                    <Empty className="min-h-40 py-8">
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon"><IconPackage /></EmptyMedia>
+                        <EmptyTitle>Nothing added yet</EmptyTitle>
+                        <EmptyDescription>
+                          Click a product to add it to the order.
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  ) : (
+                    <ul className="max-h-64 space-y-2 overflow-y-auto rounded-lg border p-2">
+                      {cart.map((line) => {
+                        const product = products.find(
+                          (p) => p.id === line.productId
+                        );
+                        return (
+                          <li
+                            key={line.productId}
+                            className="flex items-center gap-2 text-sm"
                           >
-                            <IconTrash className="size-4" />
-                          </Button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                <div className="flex justify-between border-t pt-2 text-base font-semibold">
-                  <span>Total</span>
-                  <span className="tabular-nums">{money(total)}</span>
+                            <span className="min-w-0 flex-1 truncate">
+                              {product?.name ?? "Product"}
+                            </span>
+                            <Input
+                              type="number"
+                              min="0"
+                              className="h-8 w-16"
+                              value={line.quantity}
+                              aria-label={`Quantity of ${product?.name ?? "product"}`}
+                              onChange={(e) =>
+                                updateQty(line.productId, Number(e.target.value))
+                              }
+                            />
+                            <span className="w-20 text-right tabular-nums">
+                              {money((product?.price ?? 0) * line.quantity)}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-7"
+                              aria-label={`Remove ${product?.name ?? "product"}`}
+                              onClick={() => updateQty(line.productId, 0)}
+                            >
+                              <IconTrash className="size-4" />
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2.5 text-base font-semibold">
+                    <span>Total</span>
+                    <span className="tabular-nums">{money(total)}</span>
+                  </div>
                 </div>
               </div>
+            ) : null}
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Customer</Label>
-                  <Select value={customerId} onValueChange={setCustomerId}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Walk-in</SelectItem>
-                      {customers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+            {wizardStep === 1 ? (
+              <div className="space-y-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="order-customer">Customer</Label>
+                    <Select value={customerId} onValueChange={setCustomerId}>
+                      <SelectTrigger id="order-customer">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Walk-in</SelectItem>
+                        {customers.map((customer) => (
+                          <SelectItem key={customer.id} value={customer.id}>
+                            {customer.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="order-type">Order type</Label>
+                    <Select
+                      value={orderType}
+                      onValueChange={(value) => setOrderType(value as OrderType)}
+                    >
+                      <SelectTrigger id="order-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="WALK_IN">Walk-in</SelectItem>
+                        <SelectItem value="PHONE">Phone</SelectItem>
+                        <SelectItem value="ONLINE">Online</SelectItem>
+                        <SelectItem value="CATERING">Catering</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Order type</Label>
-                  <Select
-                    value={orderType}
-                    onValueChange={(value) => setOrderType(value as OrderType)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="WALK_IN">Walk-in</SelectItem>
-                      <SelectItem value="PHONE">Phone</SelectItem>
-                      <SelectItem value="ONLINE">Online</SelectItem>
-                      <SelectItem value="CATERING">Catering</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="order-due">Due date</Label>
                   <Input
@@ -617,48 +773,119 @@ export default function OrdersPage() {
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Leave blank for same-day pickup.
+                  </p>
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="order-paid">Amount paid now</Label>
-                  <Input
-                    id="order-paid"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
+                  <Label htmlFor="order-notes">Notes</Label>
+                  <Textarea
+                    id="order-notes"
+                    rows={3}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Special instructions, allergies, pickup time…"
                   />
                 </div>
               </div>
+            ) : null}
 
-              <div className="space-y-2">
-                <Label htmlFor="order-notes">Notes</Label>
-                <Textarea
-                  id="order-notes"
-                  rows={2}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Special instructions, allergies, pickup time…"
-                />
+            {wizardStep === 2 ? (
+              <div className="space-y-5">
+                <div className="rounded-lg border">
+                  <div className="border-b bg-muted/40 px-4 py-2.5 text-sm font-medium">
+                    Order summary
+                  </div>
+                  <ul className="divide-y px-4">
+                    {cart.map((line) => {
+                      const product = products.find((p) => p.id === line.productId);
+                      return (
+                        <li
+                          key={line.productId}
+                          className="flex items-center justify-between gap-3 py-2 text-sm"
+                        >
+                          <span className="min-w-0 truncate">
+                            {line.quantity} × {product?.name ?? "Product"}
+                          </span>
+                          <span className="shrink-0 tabular-nums">
+                            {money((product?.price ?? 0) * line.quantity)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="flex items-center justify-between border-t px-4 py-3 font-semibold">
+                    <span>Total</span>
+                    <span className="tabular-nums">{money(total)}</span>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="order-paid">Amount paid now</Label>
+                    <Input
+                      id="order-paid"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={paidAmount}
+                      onChange={(e) => setPaidAmount(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-end rounded-lg bg-muted/50 px-3 py-2.5 text-sm">
+                    <span className="text-muted-foreground">Balance due: </span>
+                    <span className="ml-1 font-semibold tabular-nums">
+                      {money(Math.max(0, total - (Number(paidAmount) || 0)))}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm text-muted-foreground">
+                  <IconCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+                  <span>
+                    Recipe ingredients will be deducted from stock when the order
+                    is placed. You can edit payment and status afterwards.
+                  </span>
+                </div>
               </div>
+            ) : null}
 
-              {formError ? (
-                <p className="text-sm text-destructive">{formError}</p>
-              ) : null}
+            {formError ? (
+              <p className="text-sm text-destructive" role="alert">{formError}</p>
+            ) : null}
 
-              <DialogFooter>
+            <DialogFooter className="gap-2 sm:gap-2">
+              {wizardStep > 0 ? (
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={() => setOrderDialogOpen(false)}
+                  variant="ghost"
+                  onClick={() => {
+                    setFormError("");
+                    setWizardStep((step) => step - 1);
+                  }}
                 >
-                  Cancel
+                  <IconArrowLeft className="size-4" /> Back
                 </Button>
-                <Button type="submit" disabled={saving || cart.length === 0}>
-                  {saving ? "Placing…" : "Place order"}
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                className="sm:ml-auto"
+                onClick={() => setOrderDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              {wizardStep < ORDER_WIZARD_STEPS.length - 1 ? (
+                <Button type="button" onClick={goNext}>
+                  Continue <IconArrowRight className="size-4" />
                 </Button>
-              </DialogFooter>
-            </div>
+              ) : (
+                <LoadingButton type="submit" loading={saving} loadingLabel="Placing order">
+                  Place order
+                </LoadingButton>
+              )}
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -692,9 +919,9 @@ export default function OrdersPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Save payment"}
-              </Button>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Saving payment">
+                Save payment
+              </LoadingButton>
             </DialogFooter>
           </form>
         </DialogContent>

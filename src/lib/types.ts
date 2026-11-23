@@ -3,6 +3,24 @@ export type OrderStatus = "PENDING" | "IN_PROGRESS" | "READY" | "COMPLETED" | "C
 export type OrderType = "WALK_IN" | "PHONE" | "ONLINE" | "CATERING";
 export type PaymentStatus = "UNPAID" | "PARTIAL" | "PAID";
 export type InventoryTxnType = "PURCHASE" | "USAGE" | "ADJUSTMENT" | "WASTE";
+export type BakeStage = "PLANNED" | "MIXING" | "BAKING" | "COOLING" | "READY" | "DONE";
+export type BatchPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+export interface BakeBatch {
+  id: string;
+  batchNumber: string;
+  productId: string;
+  quantity: number;
+  stage: BakeStage;
+  priority: BatchPriority;
+  assignedTo?: string | null;
+  dueDate?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  product: Pick<Product, "id" | "name" | "category" | "imageUrl">;
+  assignee?: Pick<AuthUser, "id" | "name"> | null;
+}
 
 export interface AuthUser {
   id: string;

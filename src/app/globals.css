@@ -164,6 +164,53 @@
   display: none;
 }
 
+/* Circular reveal theme switch (native View Transitions API). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 2;
+  animation: theme-reveal 0.45s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0 at var(--x, 50%) var(--y, 50%));
+  }
+  to {
+    clip-path: circle(150% at var(--x, 50%) var(--y, 50%));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/* Gentle entrance for page sections. */
+@keyframes section-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-section-in {
+  animation: section-in 0.35s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-section-in {
+    animation: none;
+  }
+}
+
 /* Print: hide the app chrome so only the page's print area (e.g. an invoice) shows. */
 @media print {
   [data-slot="sidebar"],

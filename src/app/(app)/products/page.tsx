@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import Image from "next/image";
 import { type ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import {
@@ -19,6 +20,7 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/stat-card";
 import { Input } from "@/components/ui/input";
@@ -26,13 +28,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,6 +51,7 @@ import {
 } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FileUploader } from "@/components/ui/file-uploader";
 
 type ProductForm = {
   name: string;
@@ -56,6 +59,7 @@ type ProductForm = {
   category: string;
   price: string;
   isActive: boolean;
+  imageUrl: string | null;
   recipeItems: { ingredientId: string; quantity: string }[];
 };
 
@@ -65,6 +69,7 @@ const emptyForm: ProductForm = {
   category: "General",
   price: "0",
   isActive: true,
+  imageUrl: null,
   recipeItems: [],
 };
 
@@ -128,6 +133,7 @@ export default function ProductsPage() {
       category: product.category,
       price: String(product.price),
       isActive: product.isActive,
+      imageUrl: product.imageUrl ?? null,
       recipeItems: product.recipeItems.map((item) => ({
         ingredientId: item.ingredientId,
         quantity: String(item.quantity),
@@ -147,6 +153,7 @@ export default function ProductsPage() {
       category: form.category.trim() || "General",
       price: Number(form.price),
       isActive: form.isActive,
+      imageUrl: form.imageUrl,
       recipeItems: form.recipeItems
         .filter((item) => item.ingredientId && Number(item.quantity) > 0)
         .map((item) => ({
@@ -188,9 +195,15 @@ export default function ProductsPage() {
           const product = row.original;
           return (
             <div className="flex items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <IconBox className="size-4" />
-              </span>
+              {product.imageUrl ? (
+                <span className="relative size-9 shrink-0 overflow-hidden rounded-lg border">
+                  <Image src={product.imageUrl} alt="" fill className="object-cover" unoptimized />
+                </span>
+              ) : (
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <IconBox className="size-4" />
+                </span>
+              )}
               <div className="min-w-0">
                 <p className="truncate font-medium">{product.name}</p>
                 <p className="max-w-56 truncate text-xs text-muted-foreground">
@@ -321,18 +334,45 @@ export default function ProductsPage() {
           data={products}
           searchKey="name"
           searchPlaceholder="Search products…"
+          facetedFilters={[
+            {
+              columnId: "category",
+              title: "Category",
+              options: Array.from(new Set(products.map((p) => p.category)))
+                .sort()
+                .map((value) => ({ label: value, value })),
+            },
+            {
+              columnId: "isActive",
+              title: "Status",
+              options: [
+                { label: "Active", value: "true" },
+                { label: "Inactive", value: "false" },
+              ],
+            },
+          ]}
+          numberFilters={[
+            {
+              columnId: "price",
+              label: "Price",
+              min: 0,
+              max: Math.max(10, Math.ceil(Math.max(...products.map((p) => p.price), 0) / 10) * 10),
+              step: 1,
+              format: money,
+            },
+          ]}
         />
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Edit product" : "Add product"}</DialogTitle>
-            <DialogDescription>
+      <Sheet open={dialogOpen} onOpenChange={setDialogOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>{editing ? "Edit product" : "Add product"}</SheetTitle>
+            <SheetDescription>
               Set the price and choose which ingredients each item uses.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
+            </SheetDescription>
+          </SheetHeader>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-6">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="product-name">Name</Label>
@@ -391,6 +431,11 @@ export default function ProductsPage() {
                 </label>
               </div>
             </div>
+
+            <FileUploader
+              value={form.imageUrl}
+              onChange={(url) => setForm({ ...form, imageUrl: url })}
+            />
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -476,7 +521,7 @@ export default function ProductsPage() {
               <p className="text-sm text-destructive">{formError}</p>
             ) : null}
 
-            <DialogFooter>
+            <SheetFooter className="gap-2 sm:gap-2">
               <Button
                 type="button"
                 variant="outline"
@@ -484,13 +529,13 @@ export default function ProductsPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : editing ? "Save changes" : "Create product"}
-              </Button>
-            </DialogFooter>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Saving product">
+                {editing ? "Save changes" : "Create product"}
+              </LoadingButton>
+            </SheetFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       <ConfirmDialog
         open={deleteTarget !== null}

@@ -3,9 +3,13 @@ import {
   IconShoppingCart,
   IconBox,
   IconPackages,
+  IconAlbum,
   IconUsers,
   IconTruck,
   IconReceipt,
+  IconBell,
+  IconChartBar,
+  IconSettings,
   IconUsersGroup,
   type Icon,
 } from "@tabler/icons-react";
@@ -41,12 +45,15 @@ export const navGroups: NavGroup[] = [
     label: "Overview",
     items: [
       { title: "Dashboard", url: "/", icon: IconLayoutDashboard },
+      { title: "Analytics & reports", url: "/analytics", icon: IconChartBar },
+      { title: "Notifications", url: "/notifications", icon: IconBell },
     ],
   },
   {
     label: "Bakery operations",
     items: [
       { title: "Orders & POS", url: "/orders", icon: IconShoppingCart },
+      { title: "Production", url: "/production", icon: IconAlbum },
       { title: "Products", url: "/products", icon: IconBox },
       { title: "Ingredients", url: "/ingredients", icon: IconPackages },
       { title: "Expenses", url: "/expenses", icon: IconReceipt },
@@ -62,6 +69,7 @@ export const navGroups: NavGroup[] = [
   {
     label: "Administration",
     items: [
+      { title: "Settings", url: "/settings", icon: IconSettings },
       { title: "Team", url: "/users", icon: IconUsersGroup, adminOnly: true },
     ],
   },

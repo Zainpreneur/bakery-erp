@@ -4,6 +4,7 @@ import * as React from "react";
 import { IconMoon, IconSun } from "@tabler/icons-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
+import { startThemeTransition } from "@/lib/theme-transition";
 
 export function ThemeToggle() {
   const { setTheme, resolvedTheme } = useTheme();
@@ -15,7 +16,12 @@ export function ThemeToggle() {
       variant="ghost"
       size="icon"
       className="rounded-full"
-      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+      onClick={(event) =>
+        startThemeTransition(
+          () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
+          event.nativeEvent
+        )
+      }
       aria-label="Toggle theme"
     >
       {mounted && resolvedTheme === "dark" ? (

@@ -20,6 +20,7 @@ import { StatCard } from "@/components/stat-card";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -243,8 +244,28 @@ export default function ExpensesPage() {
           data={[...expenses].sort(
             (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
           )}
-          searchKey="category"
-          searchPlaceholder="Search by category…"
+          searchKey="description"
+          searchPlaceholder="Search expenses…"
+          facetedFilters={[
+            {
+              columnId: "category",
+              title: "Category",
+              options: Array.from(new Set(expenses.map((e) => e.category)))
+                .sort()
+                .map((value) => ({ label: value, value })),
+            },
+          ]}
+          dateFilters={[{ columnId: "date", label: "Date" }]}
+          numberFilters={[
+            {
+              columnId: "amount",
+              label: "Amount",
+              min: 0,
+              max: Math.max(100, Math.ceil(Math.max(...expenses.map((e) => e.amount), 0) / 10) * 10),
+              step: 5,
+              format: money,
+            },
+          ]}
         />
       )}
 
@@ -313,12 +334,14 @@ export default function ExpensesPage() {
               >
                 Cancel
               </Button>
-              <Button
+              <LoadingButton
                 type="submit"
-                disabled={saving || Number(form.amount) <= 0}
+                loading={saving}
+                loadingLabel="Recording expense"
+                disabled={Number(form.amount) <= 0}
               >
-                {saving ? "Saving…" : "Record expense"}
-              </Button>
+                Record expense
+              </LoadingButton>
             </DialogFooter>
           </form>
         </DialogContent>

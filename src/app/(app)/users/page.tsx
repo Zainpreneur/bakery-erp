@@ -16,13 +16,14 @@ import {
 import { api, apiErrorMessage } from "@/lib/api-client";
 import { useAuth } from "@/components/auth-provider";
 import type { AuthUser, Role } from "@/lib/types";
-import { initials } from "@/lib/format";
+import { initials, titleCase } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { StatCard } from "@/components/stat-card";
 import { StatusBadge } from "@/components/status-badge";
 import { DataTable, SortableHeader } from "@/components/data-table";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -196,6 +197,7 @@ export default function UsersPage() {
       {
         id: "status",
         header: "Status",
+        accessorFn: (user) => (user.active === false ? "Disabled" : "Active"),
         cell: ({ row }) =>
           row.original.active === false ? (
             <Badge variant="secondary" className="bg-rose-500/10 text-rose-700 dark:text-rose-400">
@@ -294,6 +296,24 @@ export default function UsersPage() {
           data={users}
           searchKey="name"
           searchPlaceholder="Search team members…"
+          facetedFilters={[
+            {
+              columnId: "role",
+              title: "Role",
+              options: ["ADMIN", "MANAGER", "STAFF"].map((value) => ({
+                label: titleCase(value),
+                value,
+              })),
+            },
+            {
+              columnId: "status",
+              title: "Status",
+              options: [
+                { label: "Active", value: "Active" },
+                { label: "Disabled", value: "Disabled" },
+              ],
+            },
+          ]}
         />
       )}
 
@@ -367,9 +387,9 @@ export default function UsersPage() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Creating…" : "Create account"}
-              </Button>
+              <LoadingButton type="submit" loading={saving} loadingLabel="Creating account">
+                Create account
+              </LoadingButton>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -398,9 +418,9 @@ export default function UsersPage() {
               <Button variant="outline" onClick={() => setRoleTarget(null)}>
                 Cancel
               </Button>
-              <Button onClick={() => void saveRole()} disabled={saving}>
-                {saving ? "Saving…" : "Save role"}
-              </Button>
+              <LoadingButton type="button" onClick={() => void saveRole()} loading={saving} loadingLabel="Saving role">
+                Save role
+              </LoadingButton>
             </DialogFooter>
           </div>
         </DialogContent>

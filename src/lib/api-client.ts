@@ -60,6 +60,32 @@ async function request<T>(path: string, method: string, body?: unknown, config?:
 }
 
 export const api = {
+  upload: async <T>(path: string, file: File): Promise<ApiResponse<T>> => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`/api${path}`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    });
+    const text = await response.text();
+    let payload: unknown = null;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new ApiError(response.status, `The server returned an unreadable response (${response.status}).`);
+      }
+    }
+    if (!response.ok) {
+      const message =
+        typeof payload === "object" && payload !== null && "error" in payload
+          ? String((payload as { error: unknown }).error)
+          : `Upload failed (${response.status})`;
+      throw new ApiError(response.status, message);
+    }
+    return { data: payload as T };
+  },
   get: <T>(path: string, config?: RequestConfig) => request<T>(path, "GET", undefined, config),
   post: <T>(path: string, body?: unknown, config?: RequestConfig) => request<T>(path, "POST", body, config),
   put: <T>(path: string, body?: unknown, config?: RequestConfig) => request<T>(path, "PUT", body, config),
